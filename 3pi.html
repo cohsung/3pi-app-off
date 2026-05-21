@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3rd Party Inspection Tracker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@latest/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quagga@2.12.1/dist/quagga.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .login-screen { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .main-app { display: none; }
+        .card { border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .btn { border-radius: 8px; font-weight: 600; }
+        .defect-checkbox { display: inline-block; margin: 5px; }
+        .photo-preview { max-width: 100px; max-height: 100px; margin: 5px; border: 2px solid #ddd; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="card p-5" style="width: 400px;">
+            <h3 class="text-center mb-4">🔒 Inspection Tracker Login</h3>
+            <input type="text" id="username" class="form-control mb-3" placeholder="Username">
+            <input type="password" id="password" class="form-control mb-3" placeholder="Password">
+            <button id="login-btn" class="btn btn-primary w-100">Login</button>
+            <small class="d-block mt-3 text-muted text-center">
+                Admin: admin / admin123<br>
+                Inspector: inspector1 / pass123
+            </small>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="main-app container py-4">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark rounded p-3 mb-4">
+            <span class="navbar-brand">Inspection Tracker</span>
+            <span class="navbar-text ms-auto" id="user-info"></span>
+            <button id="logout-btn" class="btn btn-outline-light ms-3">Logout</button>
+        </nav>
+
+        <!-- Admin Dashboard -->
+        <div id="admin-dashboard" class="hidden">
+            <h3>Admin Dashboard</h3>
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card p-4">
+                        <h5>Create Project</h5>
+                        <input type="text" id="project-name" class="form-control mb-2" placeholder="Project Name">
+                        <button id="create-project" class="btn btn-success">Create Project</button>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card p-4">
+                        <h5>Approve User</h5>
+                        <input type="text" id="approve-username" class="form-control mb-2" placeholder="Username">
+                        <input type="text" id="approve-project" class="form-control mb-2" placeholder="Project Name">
+                        <button id="approve-user" class="btn btn-warning">Approve</button>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-4">
+                <button id="list-projects" class="btn btn-info">List Projects</button>
+                <button id="export-all" class="btn btn-primary ms-2">Export All Data to Excel</button>
+            </div>
+            <div id="projects-list" class="mt-4"></div>
+        </div>
+
+        <!-- Inspector Form -->
+        <div id="inspector-form" class="hidden">
+            <h3>New Inspection</h3>
+            <div class="card p-4 mt-4">
+                <select id="project-select" class="form-select mb-3">
+                    <option value="">Select Project</option>
+                </select>
+                <input type="text" id="serial-number" class="form-control mb-2" placeholder="Serial Number (or scan barcode)">
+                <button id="scan-barcode" class="btn btn-outline-secondary mb-2">📷 Scan Barcode</button>
+                <input type="text" id="part-number" class="form-control mb-2" placeholder="Part Number / 품번">
+                <input type="text" id="part-name" class="form-control mb-2" placeholder="Part Name">
+                <input type="number" id="quantity" class="form-control mb-2" placeholder="Quantity" min="1">
+                <input type="date" id="inspection-date" class="form-control mb-2">
+                <select id="inspector-name" class="form-select mb-2">
+                    <option value="">Select Inspector Name</option>
+                    <option value="inspector1">Inspector 1</option>
+                    <option value="inspector2">Inspector 2</option>
+                </select>
+                <select id="site" class="form-select mb-2">
+                    <option value="">Select Site</option>
+                    <option value="Line 1">Line 1</option>
+                    <option value="Line 2">Line 2</option>
+                    <option value="Line 3">Line 3</option>
+                    <option value="Warehouse">Warehouse</option>
+                    <option value="Final Assembly">Final Assembly</option>
+                </select>
+                <select id="final-judgment" class="form-select mb-2">
+                    <option value="">Select Final Judgment</option>
+                    <option value="OK">OK</option>
+                    <option value="NG">NG</option>
+                    <option value="Rework">Rework</option>
+                    <option value="Hold">Hold</option>
+                </select>
+                <select id="rework-type" class="form-select mb-2 hidden">
+                    <option value="">Select Rework Type</option>
+                    <option value="Polish">Polish</option>
+                    <option value="Reweld">Reweld</option>
+                    <option value="Replace Part">Replace Part</option>
+                    <option value="Clean">Clean</option>
+                    <option value="Paint">Paint</option>
+                    <option value="Discard">Discard</option>
+                </select>
+                <h5>Defect Types (Multi-select for NG/Rework/Hold)</h5>
+                <div id="defect-checkboxes" class="mb-2"></div>
+                <h5>Capture Photo/Video</h5>
+                <div id="defect-photos"></div>
+                <div class="mb-2">
+                    <button id="capture-photo" class="btn btn-primary">📷 Capture Photo</button>
+                    <button id="start-video" class="btn btn-info">🎥 Record Video</button>
+                    <button id="stop-video" class="btn btn-danger hidden">⏹ Stop Video</button>
+                </div>
+                <textarea id="notes" class="form-control mb-2" rows="3" placeholder="Notes / Special Remarks"></textarea>
+                <button id="submit-inspection" class="btn btn-success w-100 disabled">Submit Inspection</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // App Logic
+        const users = {
+            admin: { password: 'admin123', role: 'admin' },
+            inspector1: { password: 'pass123', role: 'inspector' }
+        };
+        
+        let currentUser = null;
+        let projects = JSON.parse(localStorage.getItem('projects')) || [];
+        let inspections = JSON.parse(localStorage.getItem('inspections')) || [];
+        let approvedUsers = JSON.parse(localStorage.getItem('approvedUsers')) || {};
+        let capturedMedia = [];
+
+        // Login
+        document.getElementById('login-btn').addEventListener('click', () => {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (users[username] && users[username].password === password) {
+                currentUser = { username, role: users[username].role };
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('main-app').style.display = 'block';
+                document.getElementById('user-info').textContent = `${username} (${currentUser.role})`;
+                setupDashboard();
+            } else {
+                alert('Invalid credentials!');
+            }
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            location.reload();
+        });
+
+        function setupDashboard() {
+            if (currentUser.role === 'admin') {
+                document.getElementById('admin-dashboard').classList.remove('hidden');
+            } else {
+                document.getElementById('inspector-form').classList.remove('hidden');
+                loadProjects();
+            }
+        }
+
+        function loadProjects() {
+            const select = document.getElementById('project-select');
+            select.innerHTML = '<option value="">Select Project</option>';
+            projects.forEach(p => {
+                if (approvedUsers[currentUser.username]?.includes(p)) {
+                    const opt = document.createElement('option');
+                    opt.value = p;
+                    opt.textContent = p;
+                    select.appendChild(opt);
+                }
+            });
+        }
+
+        // Admin Functions
+        document.getElementById('create-project').addEventListener('click', () => {
+            const name = document.getElementById('project-name').value;
+            if (name && !projects.includes(name)) {
+                projects.push(name);
+                localStorage.setItem('projects', JSON.stringify(projects));
+                alert('Project created!');
+            }
+        });
+
+        document.getElementById('approve-user').addEventListener('click', () => {
+            const user = document.getElementById('approve-username').value;
+            const project = document.getElementById('approve-project').value;
+            if (user && project) {
+                if (!approvedUsers[user]) approvedUsers[user] = [];
+                if (!approvedUsers[user].includes(project)) approvedUsers[user].push(project);
+                localStorage.setItem('approvedUsers', JSON.stringify(approvedUsers));
+                alert('User approved!');
+            }
+        });
+
+        document.getElementById('list-projects').addEventListener('click', () => {
+            const div = document.getElementById('projects-list');
+            div.innerHTML = '<h5>Projects:</h5>' + projects.join(', ');
+        });
+
+        document.getElementById('export-all').addEventListener('click', () => {
+            const ws = XLSX.utils.json_to_sheet(inspections);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Inspections');
+            XLSX.writeFile(wb, 'inspection_data.xlsx');
+        });
+
+        // Inspector Functions
+        document.getElementById('final-judgment').addEventListener('change', (e) => {
+            const reworkSelect = document.getElementById('rework-type');
+            reworkSelect.classList.toggle('hidden', e.target.value !== 'Rework');
+        });
+
+        // Defect Types
+        const defectTypes = ['Scratch', 'Dent', 'Crack', 'Deformation', 'Color Mismatch', 'Dimension Error', 'Assembly Issue'];
+        const defectContainer = document.getElementById('defect-checkboxes');
+        defectTypes.forEach(defect => {
+            const label = document.createElement('label');
+            label.className = 'defect-checkbox';
+            label.innerHTML = `<input type="checkbox" value="${defect}"> ${defect}`;
+            defectContainer.appendChild(label);
+        });
+
+        // Camera
+        document.getElementById('capture-photo').addEventListener('click', async () => {
+            const video = document.createElement('video');
+            const canvas = document.createElement('canvas');
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            video.play();
+            setTimeout(() => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                const img = document.createElement('img');
+                img.src = canvas.toDataURL();
+                img.className = 'photo-preview';
+                document.getElementById('defect-photos').appendChild(img);
+                stream.getTracks().forEach(track => track.stop());
+            }, 1000);
+        });
+
+        // Barcode Scanner
+        document.getElementById('scan-barcode').addEventListener('click', () => {
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: document.body
+                },
+                decoder: {
+                    readers: ["code_128_reader", "ean_reader", "upc_reader"]
+                }
+            }, (err) => {
+                if (err) return console.log(err);
+                Quagga.start();
+            });
+            
+            Quagga.onDetected((data) => {
+                document.getElementById('serial-number').value = data.codeResult.code;
+                Quagga.stop();
+            });
+        });
+
+        // Submit
+        document.getElementById('submit-inspection').addEventListener('click', () => {
+            const inspection = {
+                project: document.getElementById('project-select').value,
+                serial: document.getElementById('serial-number').value,
+                partNumber: document.getElementById('part-number').value,
+                partName: document.getElementById('part-name').value,
+                quantity: document.getElementById('quantity').value,
+                date: document.getElementById('inspection-date').value,
+                inspector: document.getElementById('inspector-name').value,
+                site: document.getElementById('site').value,
+                judgment: document.getElementById('final-judgment').value,
+                reworkType: document.getElementById('rework-type').value,
+                defects: Array.from(document.querySelectorAll('#defect-checkboxes input:checked')).map(c => c.value),
+                notes: document.getElementById('notes').value,
+                timestamp: new Date().toISOString()
+            };
+            inspections.push(inspection);
+            localStorage.setItem('inspections', JSON.stringify(inspections));
+            alert('Inspection submitted!');
+            location.reload();
+        });
+
+        // Enable submit button when form filled
+        document.querySelectorAll('#inspector-form input, #inspector-form select').forEach(el => {
+            el.addEventListener('change', () => {
+                const filled = Array.from(document.querySelectorAll('#inspector-form input, #inspector-form select'))
+                    .every(el => el.value !== '');
+                document.getElementById('submit-inspection').disabled = !filled;
+            });
+        });
+    </script>
+</body>
+</html>
